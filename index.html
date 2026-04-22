@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>USB Docking Station — 帯域幅計算ツール</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #080b10;
+      --surface:   #0d1117;
+      --border:    #1e2533;
+      --border2:   #252d3d;
+      --cyan:      #00d4ff;
+      --cyan-dim:  rgba(0,212,255,0.12);
+      --cyan-glow: rgba(0,212,255,0.35);
+      --amber:     #ffb300;
+      --green:     #39ff8a;
+      --red:       #ff4d6a;
+      --text:      #c9d1e0;
+      --text-muted:#5a6480;
+      --text-dim:  #8896b0;
+      --header-bg: #0b1220;
+      --row-even:  #0b0f18;
+      --row-hover: #111826;
+      --total-bg:  #0f1a2e;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      padding: 2.5rem 1.5rem 4rem;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    header {
+      margin-bottom: 2.5rem;
+    }
+
+    .header-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      color: var(--cyan);
+      text-transform: uppercase;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .header-label::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      background: var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--cyan-glow);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--cyan-glow); }
+      50%       { opacity: 0.5; box-shadow: 0 0 3px var(--cyan-glow); }
+    }
+
+    h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(1.3rem, 3vw, 1.85rem);
+      font-weight: 700;
+      color: #e8edf5;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    h1 span {
+      color: var(--cyan);
+    }
+
+    .subtitle {
+      margin-top: 0.5rem;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 300;
+      letter-spacing: 0.01em;
+    }
+
+    /* Table wrapper */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 0 1px rgba(0,212,255,0.05), 0 8px 40px rgba(0,0,0,0.5);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    /* Column widths */
+    col.col-connector { width: 22%; }
+    col.col-standard  { width: 30%; }
+    col.col-count     { width: 10%; }
+    col.col-band      { width: 25%; }
+    col.col-action    { width: 13%; }
+
+    /* Table header */
+    thead th {
+      background: var(--header-bg);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 0.85rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border2);
+      white-space: nowrap;
+    }
+
+    thead th.col-band-h,
+    thead th.col-action-h {
+      text-align: right;
+    }
+
+    /* Body rows */
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    tbody tr:nth-child(even) { background: var(--row-even); }
+    tbody tr:hover           { background: var(--row-hover); }
+
+    tbody td {
+      padding: 0.6rem 0.8rem;
+      vertical-align: middle;
+    }
+
+    /* Select styling */
+    select {
+      width: 100%;
+      background: #111726;
+      color: var(--text);
+      border: 1px solid var(--border2);
+      border-radius: 5px;
+      padding: 0.42rem 0.6rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.8rem;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6480'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.6rem center;
+      background-size: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 2px var(--cyan-dim);
+    }
+
+    select option { background: #111726; }
+
+    /* Number input */
+    input[type="number"] {
+      width: 100%;
+      background: #111726;
+      color: var(--text);
+      border: 1px solid var(--border2);
+      border-radius: 5px;
+      padding: 0.42rem 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      text-align: center;
+      outline: none;
+      -moz-appearance: textfield;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
+
+    input[type="number"]:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 2px var(--cyan-dim);
+    }
+
+    /* Bandwidth cell */
+    .band-cell {
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--green);
+      letter-spacing: 0.02em;
+    }
+
+    .band-cell .unit {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+
+    /* Delete button */
+    .btn-del {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+
+    .btn-del button {
+      background: transparent;
+      border: 1px solid #2a1d22;
+      color: #5a4040;
+      border-radius: 4px;
+      padding: 0.28rem 0.55rem;
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-del button:hover {
+      border-color: var(--red);
+      color: var(--red);
+      background: rgba(255,77,106,0.08);
+    }
+
+    /* Total row */
+    tfoot tr {
+      background: var(--total-bg) !important;
+      border-top: 1px solid var(--border2);
+    }
+
+    tfoot td {
+      padding: 0.9rem 1rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .total-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .total-value {
+      text-align: right;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--cyan);
+      letter-spacing: 0.02em;
+      text-shadow: 0 0 12px var(--cyan-glow);
+    }
+
+    .total-unit {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+
+    .total-gbps {
+      display: block;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-align: right;
+      margin-top: 2px;
+      letter-spacing: 0.03em;
+    }
+
+    /* Footer bar */
+    .footer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 1.2rem;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+    }
+
+    .btn-add {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: transparent;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      border-radius: 6px;
+      padding: 0.55rem 1.1rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.18s;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-add:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: var(--cyan-dim);
+      box-shadow: 0 0 12px var(--cyan-dim);
+    }
+
+    .btn-add svg { flex-shrink: 0; }
+
+    .btn-clear {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 0.55rem 0.9rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+
+    .btn-clear:hover {
+      border-color: var(--red);
+      color: var(--red);
+      background: rgba(255,77,106,0.06);
+    }
+
+    /* Info panel */
+    .info-panel {
+      margin-top: 1.5rem;
+      background: #0a0f1a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.2rem 2.5rem;
+    }
+
+    .info-item {
+      font-size: 0.72rem;
+    }
+
+    .info-item .info-label {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .info-item .info-val {
+      color: var(--amber);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    /* Animated row appear */
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    tbody tr.new-row {
+      animation: rowIn 0.2s ease-out forwards;
+    }
+
+    /* Responsive */
+    @media (max-width: 680px) {
+      thead th { font-size: 0.55rem; padding: 0.7rem 0.5rem; }
+      tbody td { padding: 0.5rem 0.4rem; }
+      select, input[type="number"] { font-size: 0.72rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="header-label">Bandwidth Analyzer</div>
+    <h1>USB Docking Station<br><span>帯域幅計算ツール</span></h1>
+    <p class="subtitle">端子ごとの通信規格と個数を入力 → 合計帯域を自動算出</p>
+  </header>
+
+  <div class="table-wrap">
+    <table id="bwTable">
+      <colgroup>
+        <col class="col-connector">
+        <col class="col-standard">
+        <col class="col-count">
+        <col class="col-band">
+        <col class="col-action">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>端子タイプ</th>
+          <th>通信規格</th>
+          <th style="text-align:center;">個数</th>
+          <th class="col-band-h">帯域数 (Mbps)</th>
+          <th class="col-action-h"></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <!-- rows injected by JS -->
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="total-label">合計帯域</td>
+          <td class="total-value">
+            <span id="totalMbps">0</span>
+            <span class="total-unit"> Mbps</span>
+            <span class="total-gbps" id="totalGbps"></span>
+          </td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="footer-bar">
+    <button class="btn-add" onclick="addRow()">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <line x1="6.5" y1="1" x2="6.5" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="1" y1="6.5" x2="12" y2="6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      行を追加
+    </button>
+    <button class="btn-clear" onclick="clearAll()">
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+        <line x1="1" y1="1" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="10" y1="1" x2="1" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      すべてクリア
+    </button>
+  </div>
+
+  <div class="info-panel" id="infoPanel" style="display:none;">
+    <div class="info-item">
+      <div class="info-label">最大単一帯域</div>
+      <div class="info-val" id="infoMax">—</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">端子数</div>
+      <div class="info-val" id="infoCount">—</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">ボトルネック規格</div>
+      <div class="info-val" id="infoBottleneck">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Connector / Standard / Bandwidth data ─────────────────────────────────
+const CONNECTORS = {
+  "USB-A": {
+    "USB 2.0":             480,
+    "USB 3.2 Gen 1 (5G)": 5000,
+    "USB 3.2 Gen 2 (10G)":10000,
+  },
+  "USB-C": {
+    "USB 2.0":             480,
+    "USB 3.2 Gen 1 (5G)": 5000,
+    "USB 3.2 Gen 2 (10G)":10000,
+    "USB 3.2 Gen 2×2 (20G)":20000,
+    "USB4 Gen 2×2 (20G)": 20000,
+    "USB4 Gen 3×2 (40G)": 40000,
+  },
+  "Thunderbolt 3 (USB-C)": {
+    "Thunderbolt 3":       40000,
+  },
+  "Thunderbolt 4 (USB-C)": {
+    "Thunderbolt 4":       40000,
+  },
+  "Thunderbolt 5 (USB-C)": {
+    "Thunderbolt 5 (120G)":120000,
+    "Thunderbolt 5 Boost (240G)":240000,
+  },
+  "Micro-USB": {
+    "USB 2.0":             480,
+    "USB 3.2 Gen 1 (5G)": 5000,
+  },
+  "HDMI": {
+    "HDMI 1.4":            10200,
+    "HDMI 2.0":            18000,
+    "HDMI 2.1":            48000,
+    "HDMI 2.1a":           48000,
+  },
+  "DisplayPort (DP)": {
+    "DisplayPort 1.2":     21600,
+    "DisplayPort 1.4":     32400,
+    "DisplayPort 2.0":     77400,
+    "DisplayPort 2.1":     77400,
+  },
+  "Mini DisplayPort": {
+    "DisplayPort 1.2":     21600,
+    "DisplayPort 1.4":     32400,
+  },
+  "RJ-45 (Ethernet)": {
+    "100BASE-TX":           100,
+    "1000BASE-T (GbE)":    1000,
+    "2.5GBASE-T":          2500,
+    "5GBASE-T":            5000,
+    "10GBASE-T":          10000,
+  },
+  "SD カードスロット": {
+    "UHS-I (SDR104)":       104,
+    "UHS-II":               312,
+    "UHS-III":              624,
+    "SD Express (PCIe 3.0)": 985,
+  },
+  "microSD スロット": {
+    "UHS-I (SDR104)":       104,
+    "UHS-II":               312,
+  },
+  "3.5mm オーディオ": {
+    "アナログ音声":           1,
+  },
+};
+
+// ─── Row counter ────────────────────────────────────────────────────────────
+let rowId = 0;
+
+function makeConnectorOptions() {
+  return Object.keys(CONNECTORS).map(c =>
+    `<option value="${c}">${c}</option>`
+  ).join('');
+}
+
+function makeStandardOptions(connector) {
+  const stds = CONNECTORS[connector] || {};
+  return Object.keys(stds).map(s =>
+    `<option value="${s}">${s}</option>`
+  ).join('');
+}
+
+// ─── Add row ────────────────────────────────────────────────────────────────
+function addRow() {
+  const tbody = document.getElementById('tableBody');
+  const id = rowId++;
+  const firstConnector = Object.keys(CONNECTORS)[0];
+  const firstStd = Object.keys(CONNECTORS[firstConnector])[0];
+  const bw = CONNECTORS[firstConnector][firstStd];
+
+  const tr = document.createElement('tr');
+  tr.id = `row-${id}`;
+  tr.className = 'new-row';
+  tr.innerHTML = `
+    <td>
+      <select id="con-${id}" onchange="onConnectorChange(${id})">
+        ${makeConnectorOptions()}
+      </select>
+    </td>
+    <td>
+      <select id="std-${id}" onchange="calcRow(${id})">
+        ${makeStandardOptions(firstConnector)}
+      </select>
+    </td>
+    <td>
+      <input type="number" id="cnt-${id}" value="1" min="1" max="64"
+             oninput="calcRow(${id})">
+    </td>
+    <td class="band-cell" id="bnd-${id}">
+      ${bw.toLocaleString()}<span class="unit">Mbps</span>
+    </td>
+    <td class="btn-del">
+      <button onclick="deleteRow(${id})">削除</button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  updateTotal();
+}
+
+// ─── Connector changed → refresh standards ──────────────────────────────────
+function onConnectorChange(id) {
+  const con = document.getElementById(`con-${id}`).value;
+  const stdSel = document.getElementById(`std-${id}`);
+  stdSel.innerHTML = makeStandardOptions(con);
+  calcRow(id);
+}
+
+// ─── Recalc single row ──────────────────────────────────────────────────────
+function calcRow(id) {
+  const con = document.getElementById(`con-${id}`).value;
+  const std = document.getElementById(`std-${id}`).value;
+  const cnt = parseInt(document.getElementById(`cnt-${id}`).value) || 1;
+  const bw  = (CONNECTORS[con]?.[std] ?? 0) * cnt;
+  document.getElementById(`bnd-${id}`).innerHTML =
+    `${bw.toLocaleString()}<span class="unit">Mbps</span>`;
+  updateTotal();
+}
+
+// ─── Delete row ─────────────────────────────────────────────────────────────
+function deleteRow(id) {
+  const tr = document.getElementById(`row-${id}`);
+  if (tr) tr.remove();
+  updateTotal();
+}
+
+// ─── Update total ────────────────────────────────────────────────────────────
+function updateTotal() {
+  const rows = document.querySelectorAll('tbody tr');
+  let total = 0;
+  let maxBw = 0;
+  let maxStd = '—';
+  let minBw = Infinity;
+  let minStd = '—';
+  let totalPorts = 0;
+
+  rows.forEach(tr => {
+    const idMatch = tr.id.match(/row-(\d+)/);
+    if (!idMatch) return;
+    const id  = idMatch[1];
+    const con = document.getElementById(`con-${id}`)?.value;
+    const std = document.getElementById(`std-${id}`)?.value;
+    const cnt = parseInt(document.getElementById(`cnt-${id}`)?.value) || 1;
+    const singleBw = CONNECTORS[con]?.[std] ?? 0;
+    const bw = singleBw * cnt;
+    total += bw;
+    totalPorts += cnt;
+    if (singleBw > maxBw) { maxBw = singleBw; maxStd = std; }
+    if (singleBw < minBw) { minBw = singleBw; minStd = std; }
+  });
+
+  document.getElementById('totalMbps').textContent = total.toLocaleString();
+
+  if (total >= 1000) {
+    const gbps = (total / 1000).toFixed(2);
+    document.getElementById('totalGbps').textContent = `≈ ${gbps} Gbps`;
+  } else {
+    document.getElementById('totalGbps').textContent = '';
+  }
+
+  // Info panel
+  const infoPanel = document.getElementById('infoPanel');
+  if (rows.length > 0) {
+    infoPanel.style.display = 'flex';
+    document.getElementById('infoMax').textContent =
+      maxBw ? `${maxBw.toLocaleString()} Mbps  (${maxStd})` : '—';
+    document.getElementById('infoCount').textContent =
+      `${rows.length} 種類 / ${totalPorts} ポート`;
+    document.getElementById('infoBottleneck').textContent =
+      (minBw !== Infinity && rows.length > 1)
+        ? `${minBw.toLocaleString()} Mbps  (${minStd})` : '—';
+  } else {
+    infoPanel.style.display = 'none';
+  }
+}
+
+// ─── Clear all ──────────────────────────────────────────────────────────────
+function clearAll() {
+  document.getElementById('tableBody').innerHTML = '';
+  updateTotal();
+}
+
+// ─── Initial rows ────────────────────────────────────────────────────────────
+addRow();
+addRow();
+</script>
+</body>
+</html>
